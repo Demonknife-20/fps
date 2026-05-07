@@ -7,7 +7,6 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Statik dosyaları serve et
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Silah tanımlamaları
@@ -17,7 +16,7 @@ const WEAPONS = {
     name: 'Pistol',
     damage: 25,
     fireRate: 200,
-    speed: 8,
+    speed: 80,
     lifetime: 300,
     bulletsPerShot: 1,
     color: '#ffff00'
@@ -27,7 +26,7 @@ const WEAPONS = {
     name: 'Taramalı',
     damage: 15,
     fireRate: 80,
-    speed: 8,
+    speed: 80,
     lifetime: 300,
     bulletsPerShot: 1,
     color: '#00ff00'
@@ -37,7 +36,7 @@ const WEAPONS = {
     name: 'Shotgun',
     damage: 20,
     fireRate: 600,
-    speed: 8,
+    speed: 80,
     lifetime: 300,
     bulletsPerShot: 8,
     spread: 0.3,
@@ -48,7 +47,7 @@ const WEAPONS = {
     name: 'Bomba',
     damage: 80,
     fireRate: 1200,
-    speed: 5,
+    speed: 40,
     lifetime: 500,
     bulletsPerShot: 1,
     isExplosive: true,
@@ -57,57 +56,61 @@ const WEAPONS = {
   }
 };
 
-// Oyun dünyası
 const gameState = {
   players: new Map(),
   bullets: [],
   explosions: [],
   worldWidth: 5000,
-  worldHeight: 5000
+  worldHeight: 5000,
+  worldDepth: 5000
 };
 
-// Player ID üretici
 let playerIdCounter = 0;
 
-// WebSocket bağlantısı
 wss.on('connection', (ws) => {
   const playerId = playerIdCounter++;
   const player = {
     id: playerId,
     name: `Player_${playerId}`,
     x: Math.random() * gameState.worldWidth,
-    y: Math.random() * gameState.worldHeight,
+    y: 50,
+    z: Math.random() * gameState.worldDepth,
+    vx: 0,
+    vy: 0,
+    vz: 0,
     angle: 0,
-    speed: 5,
+    pitch: 0,
+    speed: 0.3,
     health: 100,
     kills: 0,
     deaths: 0,
     alive: true,
-    currentWeapon: 1, // Pistol ile başla
+    currentWeapon: 1,
     lastShotTime: 0
   };
 
   gameState.players.set(playerId, player);
   console.log(`🎮 Oyuncu bağlandı: ${playerId}`);
 
-  // Oyuncuya kendisini gönder
   ws.send(JSON.stringify({
     type: 'init',
     playerId: playerId,
     worldWidth: gameState.worldWidth,
     worldHeight: gameState.worldHeight,
+    worldDepth: gameState.worldDepth,
     weapons: WEAPONS
   }));
 
-  // İstemciden veri al
   ws.on('message', (data) => {
     try {
       const message = JSON.parse(data);
 
       if (message.type === 'move') {
         player.x = Math.max(0, Math.min(gameState.worldWidth, message.x));
-        player.y = Math.max(0, Math.min(gameState.worldHeight, message.y));
+        player.y = Math.max(0, Math.min(200, message.y));
+        player.z = Math.max(0, Math.min(gameState.worldDepth, message.z));
         player.angle = message.angle;
+        player.pitch = message.pitch;
       }
 
       if (message.type === 'shoot' && player.alive) {
@@ -117,22 +120,29 @@ wss.on('connection', (ws) => {
         if (weapon && now - player.lastShotTime >= weapon.fireRate) {
           player.lastShotTime = now;
           
-          // Mermi oluştur
           for (let i = 0; i < weapon.bulletsPerShot; i++) {
             let angle = message.angle;
+            let pitch = message.pitch;
             
-            // Shotgun spread
             if (weapon.spread) {
               angle += (Math.random() - 0.5) * weapon.spread;
+              pitch += (Math.random() - 0.5) * weapon.spread * 0.5;
             }
+            
+            const cos_a = Math.cos(angle);
+            const sin_a = Math.sin(angle);
+            const cos_p = Math.cos(pitch);
+            const sin_p = Math.sin(pitch);
             
             const bullet = {
               id: `${playerId}_${Date.now()}_${i}`,
               playerId: playerId,
-              x: player.x,
-              y: player.y,
-              angle: angle,
-              speed: weapon.speed,
+              x: player.x + cos_a * cos_p * 10,
+              y: player.y + sin_p * 10,
+              z: player.z + sin_a * cos_p * 10,
+              vx: cos_a * cos_p * weapon.speed,
+              vy: sin_p * weapon.speed,
+              vz: sin_a * cos_p * weapon.speed,
               lifetime: weapon.lifetime,
               damage: weapon.damage,
               isExplosive: weapon.isExplosive,
@@ -162,22 +172,20 @@ wss.on('connection', (ws) => {
   });
 });
 
-// Oyun döngüsü
 setInterval(() => {
   // Mermi fiziği
   for (let i = gameState.bullets.length - 1; i >= 0; i--) {
     const bullet = gameState.bullets[i];
-    bullet.x += Math.cos(bullet.angle) * bullet.speed;
-    bullet.y += Math.sin(bullet.angle) * bullet.speed;
+    bullet.x += bullet.vx;
+    bullet.y += bullet.vy - 0.5; // Yerçekimi
+    bullet.z += bullet.vz;
     bullet.lifetime--;
 
-    // Mermi ölüm alanı dışında mı?
     if (
       bullet.lifetime <= 0 ||
-      bullet.x < 0 ||
-      bullet.x > gameState.worldWidth ||
-      bullet.y < 0 ||
-      bullet.y > gameState.worldHeight
+      bullet.x < 0 || bullet.x > gameState.worldWidth ||
+      bullet.y < 0 || bullet.y > gameState.worldHeight ||
+      bullet.z < 0 || bullet.z > gameState.worldDepth
     ) {
       gameState.bullets.splice(i, 1);
       continue;
@@ -190,31 +198,30 @@ setInterval(() => {
 
       const dx = target.x - bullet.x;
       const dy = target.y - bullet.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
+      const dz = target.z - bullet.z;
+      const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-      if (distance < 20 && !hit) {
+      if (distance < 2 && !hit) {
         hit = true;
         
-        // Patlayıcı mermi
         if (bullet.isExplosive) {
-          // Patlama oluştur
           gameState.explosions.push({
             x: bullet.x,
             y: bullet.y,
+            z: bullet.z,
             radius: bullet.explosionRadius,
             lifetime: 30,
             maxLifetime: 30
           });
 
-          // Çevredeki tüm oyuncuları harita
           gameState.players.forEach((victim) => {
             if (!victim.alive) return;
             const dx = victim.x - bullet.x;
             const dy = victim.y - bullet.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
+            const dz = victim.z - bullet.z;
+            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
             if (distance < bullet.explosionRadius) {
-              // Mesafeye göre hasar azal
               const damageMultiplier = 1 - (distance / bullet.explosionRadius);
               const totalDamage = bullet.damage * damageMultiplier;
               victim.health -= totalDamage;
@@ -225,12 +232,12 @@ setInterval(() => {
                 victim.deaths++;
                 gameState.players.get(bullet.playerId).kills++;
 
-                // 3 saniye sonra yeniden doğ
                 setTimeout(() => {
                   victim.alive = true;
                   victim.health = 100;
                   victim.x = Math.random() * gameState.worldWidth;
-                  victim.y = Math.random() * gameState.worldHeight;
+                  victim.y = 50;
+                  victim.z = Math.random() * gameState.worldDepth;
                 }, 3000);
               }
             }
@@ -238,7 +245,6 @@ setInterval(() => {
 
           gameState.bullets.splice(i, 1);
         } else {
-          // Normal mermi
           target.health -= bullet.damage;
           gameState.bullets.splice(i, 1);
 
@@ -248,12 +254,12 @@ setInterval(() => {
             target.deaths++;
             gameState.players.get(bullet.playerId).kills++;
 
-            // 3 saniye sonra yeniden doğ
             setTimeout(() => {
               target.alive = true;
               target.health = 100;
               target.x = Math.random() * gameState.worldWidth;
-              target.y = Math.random() * gameState.worldHeight;
+              target.y = 50;
+              target.z = Math.random() * gameState.worldDepth;
             }, 3000);
           }
         }
@@ -269,7 +275,6 @@ setInterval(() => {
     }
   }
 
-  // Tüm oyuncuları gönder
   const gameData = JSON.stringify({
     type: 'gameState',
     players: Array.from(gameState.players.values()),
@@ -282,7 +287,7 @@ setInterval(() => {
       client.send(gameData);
     }
   });
-}, 1000 / 60); // 60 FPS
+}, 1000 / 60);
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
