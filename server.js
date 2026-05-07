@@ -19,40 +19,60 @@ const WEAPONS = {
     speed: 80,
     lifetime: 300,
     bulletsPerShot: 1,
-    color: '#ffff00'
+    color: '#ffff00',
+    ammo: 120,
+    magSize: 12
   },
   smg: {
     id: 2,
-    name: 'Taramalı',
+    name: 'Taramalı (SMG)',
     damage: 15,
-    fireRate: 80,
+    fireRate: 60,
     speed: 80,
     lifetime: 300,
     bulletsPerShot: 1,
-    color: '#00ff00'
+    color: '#00ff00',
+    ammo: 200,
+    magSize: 25
   },
   shotgun: {
     id: 3,
     name: 'Shotgun',
     damage: 20,
-    fireRate: 600,
+    fireRate: 700,
     speed: 80,
     lifetime: 300,
     bulletsPerShot: 8,
-    spread: 0.3,
-    color: '#ffffff'
+    spread: 0.4,
+    color: '#ffffff',
+    ammo: 48,
+    magSize: 8
+  },
+  sniper: {
+    id: 5,
+    name: 'Sniper',
+    damage: 90,
+    fireRate: 1500,
+    speed: 150,
+    lifetime: 500,
+    bulletsPerShot: 1,
+    color: '#ff00ff',
+    ammo: 30,
+    magSize: 5
   },
   bomb: {
     id: 4,
     name: 'Bomba',
-    damage: 80,
+    damage: 100,
     fireRate: 1200,
     speed: 40,
     lifetime: 500,
     bulletsPerShot: 1,
     isExplosive: true,
-    explosionRadius: 100,
-    color: '#000000'
+    explosionRadius: 120,
+    color: '#000000',
+    ammo: 20,
+    magSize: 1
   }
 };
 
@@ -60,18 +80,37 @@ const gameState = {
   players: new Map(),
   bullets: [],
   explosions: [],
-  worldWidth: 5000,
+  items: [],
+  worldWidth: 8000,
   worldHeight: 5000,
-  worldDepth: 5000
+  worldDepth: 8000
 };
 
 let playerIdCounter = 0;
+
+// Silah Spawn'lar
+function generateItems() {
+  const items = [];
+  for (let i = 0; i < 15; i++) {
+    items.push({
+      id: `item_${i}`,
+      type: Object.keys(WEAPONS)[Math.floor(Math.random() * 5)],
+      x: Math.random() * gameState.worldWidth,
+      y: 30,
+      z: Math.random() * gameState.worldDepth,
+      collected: false
+    });
+  }
+  return items;
+}
+
+gameState.items = generateItems();
 
 wss.on('connection', (ws) => {
   const playerId = playerIdCounter++;
   const player = {
     id: playerId,
-    name: `Player_${playerId}`,
+    name: `🕱 Player_${playerId}`,
     x: Math.random() * gameState.worldWidth,
     y: 50,
     z: Math.random() * gameState.worldDepth,
@@ -80,17 +119,27 @@ wss.on('connection', (ws) => {
     vz: 0,
     angle: 0,
     pitch: 0,
-    speed: 0.3,
+    speed: 0.4,
     health: 100,
+    maxHealth: 100,
+    armor: 0,
     kills: 0,
     deaths: 0,
+    killStreak: 0,
     alive: true,
     currentWeapon: 1,
-    lastShotTime: 0
+    lastShotTime: 0,
+    ammunition: {},
+    onGround: false
   };
 
+  // Silah mermileri başlat
+  Object.values(WEAPONS).forEach(weapon => {
+    player.ammunition[weapon.id] = weapon.ammo;
+  });
+
   gameState.players.set(playerId, player);
-  console.log(`🎮 Oyuncu bağlandı: ${playerId}`);
+  console.log(`🎮 Oyuncu bağlandı: ${playerId} (${playerId}. kişi)`);
 
   ws.send(JSON.stringify({
     type: 'init',
@@ -98,7 +147,8 @@ wss.on('connection', (ws) => {
     worldWidth: gameState.worldWidth,
     worldHeight: gameState.worldHeight,
     worldDepth: gameState.worldDepth,
-    weapons: WEAPONS
+    weapons: WEAPONS,
+    items: gameState.items
   }));
 
   ws.on('message', (data) => {
@@ -107,7 +157,7 @@ wss.on('connection', (ws) => {
 
       if (message.type === 'move') {
         player.x = Math.max(0, Math.min(gameState.worldWidth, message.x));
-        player.y = Math.max(0, Math.min(200, message.y));
+        player.y = Math.max(0, Math.min(500, message.y));
         player.z = Math.max(0, Math.min(gameState.worldDepth, message.z));
         player.angle = message.angle;
         player.pitch = message.pitch;
@@ -117,8 +167,9 @@ wss.on('connection', (ws) => {
         const now = Date.now();
         const weapon = Object.values(WEAPONS).find(w => w.id === message.weaponId);
         
-        if (weapon && now - player.lastShotTime >= weapon.fireRate) {
+        if (weapon && now - player.lastShotTime >= weapon.fireRate && player.ammunition[weapon.id] > 0) {
           player.lastShotTime = now;
+          player.ammunition[weapon.id]--;
           
           for (let i = 0; i < weapon.bulletsPerShot; i++) {
             let angle = message.angle;
@@ -157,7 +208,7 @@ wss.on('connection', (ws) => {
 
       if (message.type === 'changeWeapon') {
         const weapon = Object.values(WEAPONS).find(w => w.id === message.weaponId);
-        if (weapon) {
+        if (weapon && player.ammunition[weapon.id] > 0) {
           player.currentWeapon = weapon.id;
         }
       }
@@ -177,7 +228,7 @@ setInterval(() => {
   for (let i = gameState.bullets.length - 1; i >= 0; i--) {
     const bullet = gameState.bullets[i];
     bullet.x += bullet.vx;
-    bullet.y += bullet.vy - 0.5; // Yerçekimi
+    bullet.y += bullet.vy - 0.8; // Yerçekimi
     bullet.z += bullet.vz;
     bullet.lifetime--;
 
@@ -201,7 +252,7 @@ setInterval(() => {
       const dz = target.z - bullet.z;
       const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-      if (distance < 2 && !hit) {
+      if (distance < 2.5 && !hit) {
         hit = true;
         
         if (bullet.isExplosive) {
@@ -210,8 +261,8 @@ setInterval(() => {
             y: bullet.y,
             z: bullet.z,
             radius: bullet.explosionRadius,
-            lifetime: 30,
-            maxLifetime: 30
+            lifetime: 40,
+            maxLifetime: 40
           });
 
           gameState.players.forEach((victim) => {
@@ -223,18 +274,24 @@ setInterval(() => {
 
             if (distance < bullet.explosionRadius) {
               const damageMultiplier = 1 - (distance / bullet.explosionRadius);
-              const totalDamage = bullet.damage * damageMultiplier;
+              let totalDamage = bullet.damage * damageMultiplier;
+              
+              // Zırh koruması
+              totalDamage = Math.max(1, totalDamage - victim.armor * 0.5);
               victim.health -= totalDamage;
 
               if (victim.health <= 0) {
                 victim.alive = false;
                 victim.health = 0;
                 victim.deaths++;
-                gameState.players.get(bullet.playerId).kills++;
+                const killer = gameState.players.get(bullet.playerId);
+                killer.kills++;
+                killer.killStreak++;
 
                 setTimeout(() => {
                   victim.alive = true;
-                  victim.health = 100;
+                  victim.health = victim.maxHealth;
+                  victim.armor = 0;
                   victim.x = Math.random() * gameState.worldWidth;
                   victim.y = 50;
                   victim.z = Math.random() * gameState.worldDepth;
@@ -245,18 +302,23 @@ setInterval(() => {
 
           gameState.bullets.splice(i, 1);
         } else {
-          target.health -= bullet.damage;
+          let damage = bullet.damage;
+          damage = Math.max(1, damage - target.armor * 0.3);
+          target.health -= damage;
           gameState.bullets.splice(i, 1);
 
           if (target.health <= 0) {
             target.alive = false;
             target.health = 0;
             target.deaths++;
-            gameState.players.get(bullet.playerId).kills++;
+            const killer = gameState.players.get(bullet.playerId);
+            killer.kills++;
+            killer.killStreak++;
 
             setTimeout(() => {
               target.alive = true;
-              target.health = 100;
+              target.health = target.maxHealth;
+              target.armor = 0;
               target.x = Math.random() * gameState.worldWidth;
               target.y = 50;
               target.z = Math.random() * gameState.worldDepth;
@@ -279,7 +341,8 @@ setInterval(() => {
     type: 'gameState',
     players: Array.from(gameState.players.values()),
     bullets: gameState.bullets,
-    explosions: gameState.explosions
+    explosions: gameState.explosions,
+    items: gameState.items
   });
 
   wss.clients.forEach((client) => {
@@ -291,6 +354,10 @@ setInterval(() => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`🎮 Oyun sunucusu http://localhost:${PORT} adresinde başladı`);
-  console.log(`⚔️ Silahlar: Pistol (1), Taramalı (2), Shotgun (3), Bomba (4)`);
+  console.log(`
+🎮 ========== FPS OYUNU BAŞLADI ==========`);
+  console.log(`🔗 http://localhost:${PORT}/index3d.html`);
+  console.log(`⚔️ Silahlar: Pistol, Taramalı, Shotgun, Sniper, Bomba`);
+  console.log(`💪 Sistem: Zırh, Kill Streak, Item Spawn`);
+  console.log(`✅ Başlandı!\n`);
 });
