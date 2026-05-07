@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FPS - Poxel.io Tarzı Oyun</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #1a1a1a;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        #gameContainer {
+            display: flex;
+            height: 100vh;
+        }
+
+        canvas {
+            flex: 1;
+            background: #2a2a2a;
+            cursor: crosshair;
+        }
+
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 100;
+        }
+
+        #leaderboard {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 12px;
+            max-width: 200px;
+            z-index: 100;
+        }
+
+        .stat {
+            margin: 5px 0;
+        }
+
+        .stat-label {
+            color: #888;
+        }
+
+        .stat-value {
+            color: #0f0;
+            font-weight: bold;
+        }
+
+        .leaderboard-item {
+            padding: 3px 0;
+            border-bottom: 1px solid #444;
+        }
+
+        .leaderboard-item:last-child {
+            border-bottom: none;
+        }
+
+        .player-name {
+            color: #0f0;
+        }
+
+        .player-kills {
+            color: #f00;
+        }
+
+        #status {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+
+        .connecting {
+            color: #ff0;
+        }
+
+        .connected {
+            color: #0f0;
+        }
+
+        .dead {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border-radius: 10px;
+            z-index: 200;
+        }
+
+        .dead h1 {
+            color: #f00;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <div id="hud">
+        <div class="stat">
+            <span class="stat-label">Sağlık:</span>
+            <span class="stat-value" id="health">100</span>
+        </div>
+        <div class="stat">
+            <span class="stat-label">Öldürme:</span>
+            <span class="stat-value" id="kills">0</span>
+        </div>
+        <div class="stat">
+            <span class="stat-label">Oyuncu Sayısı:</span>
+            <span class="stat-value" id="playerCount">0</span>
+        </div>
+    </div>
+
+    <div id="leaderboard">
+        <strong>🏆 Sıralama</strong>
+        <div id="leaderboardList"></div>
+    </div>
+
+    <div id="status">
+        <span class="connecting">⚫</span> Bağlanılıyor...
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let gameState = {
+            playerId: null,
+            players: {},
+            bullets: [],
+            worldWidth: 5000,
+            worldHeight: 5000,
+            cameraX: 0,
+            cameraY: 0,
+            mouseX: canvas.width / 2,
+            mouseY: canvas.height / 2
+        };
+
+        const keys = {};
+        let ws = null;
+
+        // WebSocket bağlantısı
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}`);
+
+            ws.onopen = () => {
+                console.log('Sunucuya bağlandı!');
+                document.getElementById('status').innerHTML = '<span class="connected">🟢</span> Bağlandı';
+            };
+
+            ws.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+
+                if (message.type === 'init') {
+                    gameState.playerId = message.playerId;
+                    gameState.worldWidth = message.worldWidth;
+                    gameState.worldHeight = message.worldHeight;
+                    console.log('Oyun ID:', message.playerId);
+                }
+
+                if (message.type === 'gameState') {
+                    gameState.players = {};
+                    message.players.forEach(player => {
+                        gameState.players[player.id] = player;
+                    });
+                    gameState.bullets = message.bullets;
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket hatası:', error);
+                document.getElementById('status').innerHTML = '<span class="connecting">⚫</span> Bağlantı Hatası';
+            };
+
+            ws.onclose = () => {
+                console.log('Sunucudan bağlantı kesildi. 3 saniye sonra yeniden bağlanılacak...');
+                setTimeout(connect, 3000);
+            };
+        }
+
+        connect();
+
+        // Giriş kontrolü
+        window.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            gameState.mouseX = e.clientX;
+            gameState.mouseY = e.clientY;
+        });
+
+        window.addEventListener('click', () => {
+            if (ws && gameState.playerId !== null) {
+                const player = gameState.players[gameState.playerId];
+                if (player && player.alive) {
+                    const dx = gameState.mouseX - canvas.width / 2;
+                    const dy = gameState.mouseY - canvas.height / 2;
+                    const angle = Math.atan2(dy, dx);
+
+                    ws.send(JSON.stringify({
+                        type: 'shoot',
+                        angle: angle
+                    }));
+                }
+            }
+        });
+
+        // Oyuncu hareketi
+        setInterval(() => {
+            if (ws && gameState.playerId !== null) {
+                const player = gameState.players[gameState.playerId];
+                if (player && player.alive) {
+                    let x = player.x;
+                    let y = player.y;
+
+                    if (keys['w'] || keys['arrowup']) y -= player.speed;
+                    if (keys['s'] || keys['arrowdown']) y += player.speed;
+                    if (keys['a'] || keys['arrowleft']) x -= player.speed;
+                    if (keys['d'] || keys['arrowright']) x += player.speed;
+
+                    // Fare açısını hesapla
+                    const dx = gameState.mouseX - canvas.width / 2;
+                    const dy = gameState.mouseY - canvas.height / 2;
+                    const angle = Math.atan2(dy, dx);
+
+                    ws.send(JSON.stringify({
+                        type: 'move',
+                        x: x,
+                        y: y,
+                        angle: angle
+                    }));
+                }
+            }
+        }, 1000 / 60);
+
+        // Çizim
+        function draw() {
+            const player = gameState.players[gameState.playerId];
+
+            // Kamera güncellemesi
+            if (player && player.alive) {
+                gameState.cameraX = player.x - canvas.width / 2;
+                gameState.cameraY = player.y - canvas.height / 2;
+            }
+
+            // Arka plan
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Grid çiz (opsiyonel)
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            const gridSize = 100;
+            for (let x = -gameState.cameraX % gridSize; x < canvas.width; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = -gameState.cameraY % gridSize; y < canvas.height; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+
+            // Mermileri çiz
+            gameState.bullets.forEach(bullet => {
+                const x = bullet.x - gameState.cameraX;
+                const y = bullet.y - gameState.cameraY;
+                ctx.fillStyle = '#ffff00';
+                ctx.fillRect(x - 2, y - 2, 4, 4);
+            });
+
+            // Oyuncuları çiz
+            Object.values(gameState.players).forEach(p => {
+                const x = p.x - gameState.cameraX;
+                const y = p.y - gameState.cameraY;
+
+                // Oyuncu çerçevesi
+                if (p.alive) {
+                    ctx.fillStyle = p.id === gameState.playerId ? '#00ff00' : '#ff0000';
+                } else {
+                    ctx.fillStyle = '#444444';
+                }
+                ctx.fillRect(x - 15, y - 15, 30, 30);
+
+                // Oyuncu ismi
+                ctx.fillStyle = '#fff';
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(p.name, x, y + 25);
+
+                // Sağlık çubuğu
+                ctx.fillStyle = '#00ff00';
+                ctx.fillRect(x - 15, y - 20, (p.health / 100) * 30, 3);
+                ctx.strokeStyle = '#fff';
+                ctx.strokeRect(x - 15, y - 20, 30, 3);
+
+                // Silah yönü
+                if (p.alive) {
+                    ctx.strokeStyle = '#00ff00';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(x + Math.cos(p.angle) * 20, y + Math.sin(p.angle) * 20);
+                    ctx.stroke();
+                }
+            });
+
+            // HUD güncelleme
+            if (player) {
+                document.getElementById('health').textContent = Math.max(0, player.health);
+                document.getElementById('kills').textContent = player.kills;
+                document.getElementById('playerCount').textContent = Object.keys(gameState.players).length;
+
+                // Sıralama güncelleme
+                const sorted = Object.values(gameState.players)
+                    .sort((a, b) => b.kills - a.kills)
+                    .slice(0, 5);
+                const leaderboardList = document.getElementById('leaderboardList');
+                leaderboardList.innerHTML = sorted
+                    .map(
+                        (p, i) => `<div class="leaderboard-item">${i + 1}. <span class="player-name">${p.name}</span> <span class="player-kills">${p.kills}</span></div>`
+                    )
+                    .join('');
+
+                // Ölüm ekranı
+                if (!player.alive) {
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillStyle = '#ff0000';
+                    ctx.font = 'bold 48px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('ÖLDÜN!', canvas.width / 2, canvas.height / 2 - 30);
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '20px Arial';
+                    ctx.fillText('3 saniye sonra yeniden doğacaksın...', canvas.width / 2, canvas.height / 2 + 30);
+                }
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        // Pencere yeniden boyutlandırıldığında
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+
+        draw();
+    </script>
+</body>
+</html>
