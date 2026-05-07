@@ -10,10 +10,58 @@ const wss = new WebSocket.Server({ server });
 // Statik dosyaları serve et
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Silah tanımlamaları
+const WEAPONS = {
+  pistol: {
+    id: 1,
+    name: 'Pistol',
+    damage: 25,
+    fireRate: 200,
+    speed: 8,
+    lifetime: 300,
+    bulletsPerShot: 1,
+    color: '#ffff00'
+  },
+  smg: {
+    id: 2,
+    name: 'Taramalı',
+    damage: 15,
+    fireRate: 80,
+    speed: 8,
+    lifetime: 300,
+    bulletsPerShot: 1,
+    color: '#00ff00'
+  },
+  shotgun: {
+    id: 3,
+    name: 'Shotgun',
+    damage: 20,
+    fireRate: 600,
+    speed: 8,
+    lifetime: 300,
+    bulletsPerShot: 8,
+    spread: 0.3,
+    color: '#ffffff'
+  },
+  bomb: {
+    id: 4,
+    name: 'Bomba',
+    damage: 80,
+    fireRate: 1200,
+    speed: 5,
+    lifetime: 500,
+    bulletsPerShot: 1,
+    isExplosive: true,
+    explosionRadius: 100,
+    color: '#000000'
+  }
+};
+
 // Oyun dünyası
 const gameState = {
   players: new Map(),
   bullets: [],
+  explosions: [],
   worldWidth: 5000,
   worldHeight: 5000
 };
@@ -33,18 +81,22 @@ wss.on('connection', (ws) => {
     speed: 5,
     health: 100,
     kills: 0,
-    alive: true
+    deaths: 0,
+    alive: true,
+    currentWeapon: 1, // Pistol ile başla
+    lastShotTime: 0
   };
 
   gameState.players.set(playerId, player);
-  console.log(`Oyuncu bağlandı: ${playerId}`);
+  console.log(`🎮 Oyuncu bağlandı: ${playerId}`);
 
   // Oyuncuya kendisini gönder
   ws.send(JSON.stringify({
     type: 'init',
     playerId: playerId,
     worldWidth: gameState.worldWidth,
-    worldHeight: gameState.worldHeight
+    worldHeight: gameState.worldHeight,
+    weapons: WEAPONS
   }));
 
   // İstemciden veri al
@@ -58,17 +110,46 @@ wss.on('connection', (ws) => {
         player.angle = message.angle;
       }
 
-      if (message.type === 'shoot') {
-        const bullet = {
-          id: `${playerId}_${Date.now()}`,
-          playerId: playerId,
-          x: player.x,
-          y: player.y,
-          angle: message.angle,
-          speed: 8,
-          lifetime: 300 // 300ms yaşam süresi
-        };
-        gameState.bullets.push(bullet);
+      if (message.type === 'shoot' && player.alive) {
+        const now = Date.now();
+        const weapon = Object.values(WEAPONS).find(w => w.id === message.weaponId);
+        
+        if (weapon && now - player.lastShotTime >= weapon.fireRate) {
+          player.lastShotTime = now;
+          
+          // Mermi oluştur
+          for (let i = 0; i < weapon.bulletsPerShot; i++) {
+            let angle = message.angle;
+            
+            // Shotgun spread
+            if (weapon.spread) {
+              angle += (Math.random() - 0.5) * weapon.spread;
+            }
+            
+            const bullet = {
+              id: `${playerId}_${Date.now()}_${i}`,
+              playerId: playerId,
+              x: player.x,
+              y: player.y,
+              angle: angle,
+              speed: weapon.speed,
+              lifetime: weapon.lifetime,
+              damage: weapon.damage,
+              isExplosive: weapon.isExplosive,
+              explosionRadius: weapon.explosionRadius,
+              color: weapon.color,
+              weaponType: weapon.name
+            };
+            gameState.bullets.push(bullet);
+          }
+        }
+      }
+
+      if (message.type === 'changeWeapon') {
+        const weapon = Object.values(WEAPONS).find(w => w.id === message.weaponId);
+        if (weapon) {
+          player.currentWeapon = weapon.id;
+        }
       }
     } catch (e) {
       console.error('Hata:', e);
@@ -77,7 +158,7 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     gameState.players.delete(playerId);
-    console.log(`Oyuncu ayrıldı: ${playerId}`);
+    console.log(`❌ Oyuncu ayrıldı: ${playerId}`);
   });
 });
 
@@ -103,6 +184,7 @@ setInterval(() => {
     }
 
     // Çarpışma kontrolü
+    let hit = false;
     gameState.players.forEach((target) => {
       if (target.id === bullet.playerId || !target.alive) return;
 
@@ -110,32 +192,89 @@ setInterval(() => {
       const dy = target.y - bullet.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
 
-      if (distance < 20) {
-        target.health -= 25;
-        gameState.bullets.splice(i, 1);
+      if (distance < 20 && !hit) {
+        hit = true;
+        
+        // Patlayıcı mermi
+        if (bullet.isExplosive) {
+          // Patlama oluştur
+          gameState.explosions.push({
+            x: bullet.x,
+            y: bullet.y,
+            radius: bullet.explosionRadius,
+            lifetime: 30,
+            maxLifetime: 30
+          });
 
-        if (target.health <= 0) {
-          target.alive = false;
-          target.health = 0;
-          gameState.players.get(bullet.playerId).kills++;
+          // Çevredeki tüm oyuncuları harita
+          gameState.players.forEach((victim) => {
+            if (!victim.alive) return;
+            const dx = victim.x - bullet.x;
+            const dy = victim.y - bullet.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
 
-          // 3 saniye sonra yeniden doğ
-          setTimeout(() => {
-            target.alive = true;
-            target.health = 100;
-            target.x = Math.random() * gameState.worldWidth;
-            target.y = Math.random() * gameState.worldHeight;
-          }, 3000);
+            if (distance < bullet.explosionRadius) {
+              // Mesafeye göre hasar azal
+              const damageMultiplier = 1 - (distance / bullet.explosionRadius);
+              const totalDamage = bullet.damage * damageMultiplier;
+              victim.health -= totalDamage;
+
+              if (victim.health <= 0) {
+                victim.alive = false;
+                victim.health = 0;
+                victim.deaths++;
+                gameState.players.get(bullet.playerId).kills++;
+
+                // 3 saniye sonra yeniden doğ
+                setTimeout(() => {
+                  victim.alive = true;
+                  victim.health = 100;
+                  victim.x = Math.random() * gameState.worldWidth;
+                  victim.y = Math.random() * gameState.worldHeight;
+                }, 3000);
+              }
+            }
+          });
+
+          gameState.bullets.splice(i, 1);
+        } else {
+          // Normal mermi
+          target.health -= bullet.damage;
+          gameState.bullets.splice(i, 1);
+
+          if (target.health <= 0) {
+            target.alive = false;
+            target.health = 0;
+            target.deaths++;
+            gameState.players.get(bullet.playerId).kills++;
+
+            // 3 saniye sonra yeniden doğ
+            setTimeout(() => {
+              target.alive = true;
+              target.health = 100;
+              target.x = Math.random() * gameState.worldWidth;
+              target.y = Math.random() * gameState.worldHeight;
+            }, 3000);
+          }
         }
       }
     });
+  }
+
+  // Patlamaları güncelle
+  for (let i = gameState.explosions.length - 1; i >= 0; i--) {
+    gameState.explosions[i].lifetime--;
+    if (gameState.explosions[i].lifetime <= 0) {
+      gameState.explosions.splice(i, 1);
+    }
   }
 
   // Tüm oyuncuları gönder
   const gameData = JSON.stringify({
     type: 'gameState',
     players: Array.from(gameState.players.values()),
-    bullets: gameState.bullets
+    bullets: gameState.bullets,
+    explosions: gameState.explosions
   });
 
   wss.clients.forEach((client) => {
@@ -148,4 +287,5 @@ setInterval(() => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`🎮 Oyun sunucusu http://localhost:${PORT} adresinde başladı`);
+  console.log(`⚔️ Silahlar: Pistol (1), Taramalı (2), Shotgun (3), Bomba (4)`);
 });

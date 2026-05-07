@@ -25,7 +25,7 @@
 
         canvas {
             flex: 1;
-            background: #2a2a2a;
+            background: #0a0a0a;
             cursor: crosshair;
         }
 
@@ -33,31 +33,77 @@
             position: absolute;
             top: 10px;
             left: 10px;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.8);
             padding: 15px;
             border-radius: 5px;
-            font-size: 14px;
+            font-size: 13px;
             z-index: 100;
+            border: 2px solid #00ff00;
+        }
+
+        #weaponHUD {
+            position: absolute;
+            bottom: 100px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 5px;
+            z-index: 100;
+            border: 2px solid #ffff00;
+            min-width: 200px;
+        }
+
+        .weapon-button {
+            display: inline-block;
+            padding: 8px 12px;
+            margin: 5px 5px 5px 0;
+            background: #333;
+            border: 2px solid #666;
+            color: #fff;
+            cursor: pointer;
+            border-radius: 3px;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+
+        .weapon-button:hover {
+            background: #555;
+            border-color: #00ff00;
+        }
+
+        .weapon-button.active {
+            background: #00ff00;
+            color: #000;
+            border-color: #00ff00;
         }
 
         #leaderboard {
             position: absolute;
             top: 10px;
             right: 10px;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.8);
             padding: 15px;
             border-radius: 5px;
             font-size: 12px;
-            max-width: 200px;
+            max-width: 220px;
             z-index: 100;
+            border: 2px solid #ff0000;
         }
 
         .stat {
-            margin: 5px 0;
+            margin: 8px 0;
+            padding: 5px 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .stat:last-child {
+            border-bottom: none;
         }
 
         .stat-label {
             color: #888;
+            display: inline-block;
+            width: 80px;
         }
 
         .stat-value {
@@ -66,8 +112,10 @@
         }
 
         .leaderboard-item {
-            padding: 3px 0;
+            padding: 5px 0;
             border-bottom: 1px solid #444;
+            display: flex;
+            justify-content: space-between;
         }
 
         .leaderboard-item:last-child {
@@ -76,20 +124,25 @@
 
         .player-name {
             color: #0f0;
+            flex: 1;
         }
 
         .player-kills {
             color: #f00;
+            font-weight: bold;
+            min-width: 30px;
+            text-align: right;
         }
 
         #status {
             position: absolute;
             bottom: 10px;
             left: 10px;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.8);
             padding: 10px;
             border-radius: 5px;
             font-size: 12px;
+            border: 2px solid #ffff00;
         }
 
         .connecting {
@@ -106,15 +159,41 @@
             left: 50%;
             transform: translate(-50%, -50%);
             text-align: center;
-            background: rgba(0, 0, 0, 0.9);
-            padding: 30px;
+            background: rgba(0, 0, 0, 0.95);
+            padding: 40px;
             border-radius: 10px;
             z-index: 200;
+            border: 3px solid #ff0000;
         }
 
         .dead h1 {
             color: #f00;
-            margin-bottom: 10px;
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .dead p {
+            color: #fff;
+            font-size: 16px;
+            margin: 5px 0;
+        }
+
+        #instructionHUD {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 12px;
+            border-radius: 5px;
+            font-size: 11px;
+            max-width: 150px;
+            z-index: 100;
+            border: 1px solid #666;
+        }
+
+        .instruction {
+            margin: 3px 0;
+            color: #ccc;
         }
     </style>
 </head>
@@ -125,26 +204,47 @@
 
     <div id="hud">
         <div class="stat">
-            <span class="stat-label">Sağlık:</span>
+            <span class="stat-label">❤️ Sağlık:</span>
             <span class="stat-value" id="health">100</span>
         </div>
         <div class="stat">
-            <span class="stat-label">Öldürme:</span>
+            <span class="stat-label">💀 Öldürme:</span>
             <span class="stat-value" id="kills">0</span>
         </div>
         <div class="stat">
-            <span class="stat-label">Oyuncu Sayısı:</span>
+            <span class="stat-label">⚰️ Ölüm:</span>
+            <span class="stat-value" id="deaths">0</span>
+        </div>
+        <div class="stat">
+            <span class="stat-label">👥 Oyuncu:</span>
             <span class="stat-value" id="playerCount">0</span>
+        </div>
+        <div class="stat">
+            <span class="stat-label">🎯 Silah:</span>
+            <span class="stat-value" id="weaponName">Pistol</span>
         </div>
     </div>
 
+    <div id="weaponHUD">
+        <div style="color: #ffff00; font-weight: bold; margin-bottom: 8px;">⚔️ Silah Seç (1-4):</div>
+        <div id="weaponButtons"></div>
+    </div>
+
     <div id="leaderboard">
-        <strong>🏆 Sıralama</strong>
+        <strong style="color: #f00;">🏆 Sıralama</strong>
         <div id="leaderboardList"></div>
     </div>
 
     <div id="status">
-        <span class="connecting">⚫</span> Bağlanılıyor...
+        <span class="connecting">⚫</span> <span id="statusText">Bağlanılıyor...</span>
+    </div>
+
+    <div id="instructionHUD">
+        <div class="instruction"><strong>⌨️ Kontroller</strong></div>
+        <div class="instruction">W/A/S/D - Hareket</div>
+        <div class="instruction">Fare - Nişan</div>
+        <div class="instruction">Sol Tık - Ateş</div>
+        <div class="instruction">1-4 / Buton - Silah</div>
     </div>
 
     <script>
@@ -157,12 +257,14 @@
             playerId: null,
             players: {},
             bullets: [],
+            explosions: [],
             worldWidth: 5000,
             worldHeight: 5000,
             cameraX: 0,
             cameraY: 0,
             mouseX: canvas.width / 2,
-            mouseY: canvas.height / 2
+            mouseY: canvas.height / 2,
+            weapons: {}
         };
 
         const keys = {};
@@ -174,8 +276,11 @@
             ws = new WebSocket(`${protocol}//${window.location.host}`);
 
             ws.onopen = () => {
-                console.log('Sunucuya bağlandı!');
-                document.getElementById('status').innerHTML = '<span class="connected">🟢</span> Bağlandı';
+                console.log('✅ Sunucuya bağlandı!');
+                document.getElementById('statusText').textContent = 'Bağlandı';
+                document.querySelector('#status .connecting').classList.add('connected');
+                document.querySelector('#status .connecting').classList.remove('connecting');
+                document.querySelector('#status .connecting').textContent = '🟢';
             };
 
             ws.onmessage = (event) => {
@@ -185,7 +290,9 @@
                     gameState.playerId = message.playerId;
                     gameState.worldWidth = message.worldWidth;
                     gameState.worldHeight = message.worldHeight;
-                    console.log('Oyun ID:', message.playerId);
+                    gameState.weapons = message.weapons;
+                    console.log('🎮 Oyun ID:', message.playerId);
+                    setupWeaponButtons();
                 }
 
                 if (message.type === 'gameState') {
@@ -194,25 +301,63 @@
                         gameState.players[player.id] = player;
                     });
                     gameState.bullets = message.bullets;
+                    gameState.explosions = message.explosions || [];
                 }
             };
 
             ws.onerror = (error) => {
-                console.error('WebSocket hatası:', error);
-                document.getElementById('status').innerHTML = '<span class="connecting">⚫</span> Bağlantı Hatası';
+                console.error('❌ WebSocket hatası:', error);
+                document.getElementById('statusText').textContent = 'Hata';
             };
 
             ws.onclose = () => {
-                console.log('Sunucudan bağlantı kesildi. 3 saniye sonra yeniden bağlanılacak...');
+                console.log('🔄 Yeniden bağlanılıyor...');
+                document.getElementById('statusText').textContent = 'Bağlanılıyor...';
                 setTimeout(connect, 3000);
             };
+        }
+
+        function setupWeaponButtons() {
+            const container = document.getElementById('weaponButtons');
+            Object.values(gameState.weapons).forEach(weapon => {
+                const button = document.createElement('button');
+                button.className = 'weapon-button';
+                if (weapon.id === 1) button.classList.add('active');
+                button.textContent = `${weapon.id}. ${weapon.name}`;
+                button.onclick = () => switchWeapon(weapon.id);
+                container.appendChild(button);
+            });
+        }
+
+        function switchWeapon(weaponId) {
+            if (ws && gameState.playerId !== null) {
+                const player = gameState.players[gameState.playerId];
+                if (player) {
+                    ws.send(JSON.stringify({
+                        type: 'changeWeapon',
+                        weaponId: weaponId
+                    }));
+
+                    // UI güncelle
+                    document.querySelectorAll('.weapon-button').forEach(btn => {
+                        btn.classList.remove('active');
+                    });
+                    document.querySelector(`.weapon-button:nth-child(${weaponId})`).classList.add('active');
+                }
+            }
         }
 
         connect();
 
         // Giriş kontrolü
         window.addEventListener('keydown', (e) => {
-            keys[e.key.toLowerCase()] = true;
+            const key = e.key.toLowerCase();
+            keys[key] = true;
+
+            // Silah değiştirme
+            if (['1', '2', '3', '4'].includes(key)) {
+                switchWeapon(parseInt(key));
+            }
         });
 
         window.addEventListener('keyup', (e) => {
@@ -234,7 +379,8 @@
 
                     ws.send(JSON.stringify({
                         type: 'shoot',
-                        angle: angle
+                        angle: angle,
+                        weaponId: player.currentWeapon
                     }));
                 }
             }
@@ -253,7 +399,6 @@
                     if (keys['a'] || keys['arrowleft']) x -= player.speed;
                     if (keys['d'] || keys['arrowright']) x += player.speed;
 
-                    // Fare açısını hesapla
                     const dx = gameState.mouseX - canvas.width / 2;
                     const dy = gameState.mouseY - canvas.height / 2;
                     const angle = Math.atan2(dy, dx);
@@ -272,18 +417,17 @@
         function draw() {
             const player = gameState.players[gameState.playerId];
 
-            // Kamera güncellemesi
             if (player && player.alive) {
                 gameState.cameraX = player.x - canvas.width / 2;
                 gameState.cameraY = player.y - canvas.height / 2;
             }
 
             // Arka plan
-            ctx.fillStyle = '#1a1a1a';
+            ctx.fillStyle = '#0a0a0a';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Grid çiz (opsiyonel)
-            ctx.strokeStyle = '#333';
+            // Grid
+            ctx.strokeStyle = '#1a1a1a';
             ctx.lineWidth = 1;
             const gridSize = 100;
             for (let x = -gameState.cameraX % gridSize; x < canvas.width; x += gridSize) {
@@ -299,12 +443,46 @@
                 ctx.stroke();
             }
 
+            // Patlamaları çiz
+            gameState.explosions.forEach(explosion => {
+                const x = explosion.x - gameState.cameraX;
+                const y = explosion.y - gameState.cameraY;
+                const alpha = explosion.lifetime / explosion.maxLifetime;
+                const radius = explosion.radius * alpha;
+
+                // Patlama çemberi
+                ctx.strokeStyle = `rgba(255, 100, 0, ${alpha * 0.7})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // İç doldurma
+                ctx.fillStyle = `rgba(255, 150, 0, ${alpha * 0.3})`;
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
             // Mermileri çiz
             gameState.bullets.forEach(bullet => {
                 const x = bullet.x - gameState.cameraX;
                 const y = bullet.y - gameState.cameraY;
-                ctx.fillStyle = '#ffff00';
-                ctx.fillRect(x - 2, y - 2, 4, 4);
+
+                if (bullet.isExplosive) {
+                    // Bomba - Siyah daire
+                    ctx.fillStyle = '#000000';
+                    ctx.beginPath();
+                    ctx.arc(x, y, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#ff6600';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                } else {
+                    // Normal mermi
+                    ctx.fillStyle = bullet.color;
+                    ctx.fillRect(x - 2, y - 2, 4, 4);
+                }
             });
 
             // Oyuncuları çiz
@@ -320,17 +498,22 @@
                 }
                 ctx.fillRect(x - 15, y - 15, 30, 30);
 
-                // Oyuncu ismi
+                // Sağlık çubuğu
+                const healthPercent = Math.max(0, p.health / 100);
+                ctx.fillStyle = healthPercent > 0.5 ? '#00ff00' : healthPercent > 0.25 ? '#ffff00' : '#ff0000';
+                ctx.fillRect(x - 15, y - 22, 30 * healthPercent, 3);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(x - 15, y - 22, 30, 3);
+
+                // Oyuncu ismi ve kill count
                 ctx.fillStyle = '#fff';
                 ctx.font = '10px Arial';
                 ctx.textAlign = 'center';
                 ctx.fillText(p.name, x, y + 25);
-
-                // Sağlık çubuğu
-                ctx.fillStyle = '#00ff00';
-                ctx.fillRect(x - 15, y - 20, (p.health / 100) * 30, 3);
-                ctx.strokeStyle = '#fff';
-                ctx.strokeRect(x - 15, y - 20, 30, 3);
+                ctx.fillStyle = '#ffff00';
+                ctx.font = 'bold 8px Arial';
+                ctx.fillText(`K:${p.kills} D:${p.deaths}`, x, y + 35);
 
                 // Silah yönü
                 if (p.alive) {
@@ -345,39 +528,45 @@
 
             // HUD güncelleme
             if (player) {
-                document.getElementById('health').textContent = Math.max(0, player.health);
+                document.getElementById('health').textContent = Math.max(0, Math.floor(player.health));
                 document.getElementById('kills').textContent = player.kills;
+                document.getElementById('deaths').textContent = player.deaths;
                 document.getElementById('playerCount').textContent = Object.keys(gameState.players).length;
 
-                // Sıralama güncelleme
+                const weaponName = Object.values(gameState.weapons).find(w => w.id === player.currentWeapon)?.name || 'Unknown';
+                document.getElementById('weaponName').textContent = weaponName;
+
+                // Sıralama
                 const sorted = Object.values(gameState.players)
                     .sort((a, b) => b.kills - a.kills)
                     .slice(0, 5);
                 const leaderboardList = document.getElementById('leaderboardList');
                 leaderboardList.innerHTML = sorted
-                    .map(
-                        (p, i) => `<div class="leaderboard-item">${i + 1}. <span class="player-name">${p.name}</span> <span class="player-kills">${p.kills}</span></div>`
-                    )
+                    .map((p, i) => `
+                        <div class="leaderboard-item">
+                            <span>${i + 1}. <span class="player-name">${p.name}</span></span>
+                            <span class="player-kills">${p.kills}</span>
+                        </div>
+                    `)
                     .join('');
 
                 // Ölüm ekranı
                 if (!player.alive) {
-                    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
                     ctx.fillStyle = '#ff0000';
-                    ctx.font = 'bold 48px Arial';
+                    ctx.font = 'bold 60px Arial';
                     ctx.textAlign = 'center';
-                    ctx.fillText('ÖLDÜN!', canvas.width / 2, canvas.height / 2 - 30);
-                    ctx.fillStyle = '#fff';
-                    ctx.font = '20px Arial';
-                    ctx.fillText('3 saniye sonra yeniden doğacaksın...', canvas.width / 2, canvas.height / 2 + 30);
+                    ctx.fillText('ÖLDÜN! 💀', canvas.width / 2, canvas.height / 2 - 50);
+                    ctx.fillStyle = '#ffff00';
+                    ctx.font = 'bold 24px Arial';
+                    ctx.fillText('3 saniye sonra yeniden doğacaksın...', canvas.width / 2, canvas.height / 2 + 50);
                 }
             }
 
             requestAnimationFrame(draw);
         }
 
-        // Pencere yeniden boyutlandırıldığında
         window.addEventListener('resize', () => {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
